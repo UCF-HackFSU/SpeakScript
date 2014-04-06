@@ -5,7 +5,6 @@
 	| define <id> arguments <args> body <expr>
 	| start <expr> {next <expr>} end
 	| return <expr>
-	| <number>
 	| set <id> <value>
 
 <value> := <id> | <number> | <expr> | string <expr> end	
