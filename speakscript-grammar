@@ -1,0 +1,29 @@
+<expr> := variable <id> <value>
+	| <id> arguments <args>
+	| if <bool-expr> then <expr>
+	| while <bool-expr> do <expr>
+	| define <id> arguments <args> body <expr>
+	| start <expr> {next <expr>} end
+	| return <expr>
+	| <number>
+	| set <id> <value>
+
+<value> := <id> | <number> | <expr> | string <expr> end	
+
+<args> := <id> <args> | <expr> <args> | start <expr> end <args> | ε
+
+<id> := <letter> {<letter>}
+
+<letter> := a | b | c | d | e | f | g | h | i | j | k | l | m | n | o
+	| p | q | r | s | t | u | v | w | x | y | z
+
+<num> := one | two | three | four | five | six | seven | eight | nine | zero
+
+<number> := <num> {<num>}
+
+<bool-expr> := true
+	| false
+	| not <bool-expr> <bool-expr>
+	| and <bool-expr> <bool-expr>
+	| or <bool-expr> <bool-expr>
+	| <id> arguments <args>
