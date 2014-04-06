@@ -7,11 +7,13 @@
 	| return <expr>
 	| set <id> <value>
 
-<value> := <id> | <number> | <expr> | string <expr> end	
+<value> := <id> | <number> | <expr> | string <string> end	
 
 <args> := <id> <args> | <expr> <args> | start <expr> end <args> | ε
 
 <id> := <letter> {<letter>}
+
+<string> := {<letter> | ' '}
 
 <letter> := a | b | c | d | e | f | g | h | i | j | k | l | m | n | o
 	| p | q | r | s | t | u | v | w | x | y | z
@@ -21,8 +23,8 @@
 <number> := <num> {<num>}
 
 <bool-expr> := true
-	| false
-	| not <bool-expr>
-	| and <bool-expr> <bool-expr>
-	| or <bool-expr> <bool-expr>
-	| <id> arguments <args>
+	     | false
+	     | not <bool-expr>
+	     | and <bool-expr> <bool-expr>
+	     | or <bool-expr> <bool-expr>
+	     | <id> arguments <args>
