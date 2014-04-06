@@ -8,4 +8,4 @@ SpeakScript
 Contributors
 * Nikesh Srivastava - compiler & language design 
 * Conner Brooks - User interface & language design
-* Christian Gati - Testing and emotional support
+* Christian Gati - Language design & testing & emotional support
