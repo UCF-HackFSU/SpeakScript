@@ -1,0 +1,639 @@
+<html style="width:100%; height:100%; overflow:hidden">
+<head>
+<!-- You can include external scripts here like so... -->
+<!--<script src="https://cdnjs.cloudflare.com/ajax/libs/zepto/1.0/zepto.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/underscore.js/1.5.2/underscore-min.js"></script>-->
+</head>
+<body style="width:100%; height:100%; overflow:hidden; margin:0">
+<canvas id="canvas" width="640" height="360" style="display:block"></canvas>
+<script>
+var progNum = 0;
+var tree;
+var programTree = new WS.Cards();
+var programs = [];
+var programStrings = [];
+
+var dbg = 0;
+
+var token;
+var tokens;
+var tokenPtr = 0;
+
+function getNextToken() {
+    token = tokens[tokenPtr++];
+}
+
+function runParser(data) {
+    // Split the data into tokens
+    tokens = data.split(' ');
+    tokenPtr = 0;
+        
+    getNextToken();    
+    return expr();
+}
+
+var errorCode = 0;
+var errors = { IdExpected:1, DoExpected:2, ThenExpected:3, ArgumentsExpected:4, BodyExpected:5, EndExpected:6 };
+
+function error(code, pos) {
+    var ErrMsg = getError(code, pos);
+    WS.log(ErrMsg);
+}
+
+function getError(code, pos) {
+    switch (code) {
+        case errors.IdExpected:
+            return 'Expected an identifier. Received: ' + token + ' at ' + tokenPtr;
+        case errors.DoExpected:
+            return 'Expected \'do\' in \'while\' definition. Received: ' + token + ' at ' + tokenPtr;
+        case errors.ThenExpected:
+            return 'Expected \'then\' in \'if\' definition. Received: ' + token + ' at ' + tokenPtr;
+        case errors.ArgumentsExpected:
+            return 'Expected the keyword \'arguments\' when using a function. Received: ' + token + ' at ' + tokenPtr; 
+        case errors.BodyExpected:
+            return 'Expected the \'body\' keyword when defining a function. Received: '  + token + ' at ' + tokenPtr;
+        case errors.EndExpected:
+            return 'Expected a matching \'end\' to \'start\'. Received: ' + token + ' at ' + tokenPtr; 
+        default:
+            return 'Error. Sorry, we don\'t know exactly what went wrong'
+    }
+}
+
+function expr() {
+    if (token === 'variable') {
+        getNextToken();
+        
+        if (!isId(token)) {
+            error(errors.IdExpected, tokenPtr);
+            return 'ERROR';
+        }
+        
+        var id = token;
+        
+        getNextToken();
+        var v = value();
+        
+        if (v === 'ERROR') {
+            return v;
+        }
+        else {
+            return emitVar(id, v);
+        }
+    }
+    else if (token === 'while') {
+        getNextToken();
+        var b = boolExpr();
+        
+        if (token !== 'do') {
+            error(errors.DoExpected);
+            return 'ERROR'
+        }
+        
+        getNextToken();
+        var e = expr();
+        
+        if (b === 'ERROR' || e === 'ERROR') {
+            return 'ERROR';
+        }
+        else {
+            return emitWhile(b, e);
+        }
+    }
+    else if (token === 'if') {
+        getNextToken();
+        var b = boolExpr();
+        
+        if (token !== 'then') {
+            error(errors.ThenExpected);
+            return 'ERROR';
+        }
+        
+        getNextToken();
+        var e = expr();
+        
+        if (b === 'ERROR' || e === 'ERROR') {
+            return 'ERROR';
+        }
+        else {
+            return emitIf(b, e);
+        }
+    }
+    else if (token === 'define') {
+        getNextToken();
+        
+        if (!isId(token)) {
+            error(errors.IdExpected);
+            return 'ERROR';
+        }
+        
+        var id = token;
+        getNextToken();
+        
+        if (token !== 'arguments') {
+            error(errors.ArgumentsExpected);
+            return 'ERROR';
+        }
+        
+        getNextToken();
+        var a = defineArgs();
+        
+        if (token !== 'body') {
+            error(errors.BodyExpected);
+            return 'ERROR';
+        }
+        
+        getNextToken();
+        var e = expr();
+        
+        if (id === 'ERROR' || a === 'ERROR' || e === 'ERROR') {
+            return 'ERROR';
+        }
+        else {
+            return emitDefine(id, a, e);
+        }
+    }
+    else if (token === 'start') {
+        var list = emitStart();
+        
+        getNextToken();
+        var e = expr();
+        list += e;
+        
+        while (token === 'next') {
+            getNextToken();
+            e = expr();
+            list += '; ' + e;
+        }
+        
+        if (token !== 'end') {
+            error(errors.EndExpected);
+            return 'ERROR';
+        }
+        
+        list += emitEnd();
+        return list;
+    }
+    else if (token === 'return') {
+        getNextToken();
+        var e = value();
+        return emitReturn(e);
+    }
+    else if (token === 'set') {
+        getNextToken();
+        
+        if (!isId(token)) {
+            error(errors.IdExpected);
+            return 'ERROR';
+        }
+        
+        var id = token;
+        
+        getNextToken();
+        var v = value();
+    
+        if (v === 'ERROR') {
+            return v;
+        }
+        else {
+            return emitSet(id, v);
+        }
+    }
+    else if (isId(token)) {
+        return functionCall();
+    }
+    else {
+        return '';
+    }
+}
+
+function functionCall() {
+    var id = token;
+    getNextToken();
+        
+    if (token !== 'arguments') {
+            error(errors.ArgumentsExpected);
+            return 'ERROR';
+    }
+    
+    getNextToken();
+    
+    var a = args();
+        
+    if (id === 'ERROR' || a === 'ERROR') {
+        return 'ERROR';
+    }
+    else {
+        return emitFunctionCall(id, a);
+    }
+}
+
+function value() {
+    if (token === 'string') {
+        getNextToken();
+        
+        var t = expr();
+        
+        if (token !== 'end') {
+            error(errors.EndExpected);
+            return 'ERROR';
+        }
+        
+        return '"' + t + '"';
+    }
+    else if (isId(token) || isNumber(token)) {
+        var t = token;
+        getNextToken();
+        return t;
+    }
+    else {
+        return expr();
+    }
+}
+
+function defineArgs() {
+    if (isId(token)) {
+        var t = token;
+        getNextToken();
+        
+        if (t === 'ERROR') {
+            return 'ERROR';
+        }
+        
+        while (token !== 'body') {
+            var a = defineArgs();
+            if (a === 'ERROR') {
+                return 'ERROR';
+            }
+            else {
+                if (tokens[tokenPtr + 1] === 'body') {
+                    t += a;
+                }
+                else {
+                    t += ', ' + a;
+                }
+            }
+        }
+        
+        if (t === 'ERROR') {
+            return 'ERROR';
+        }
+        else {
+            return t;
+        }
+    }
+    else if (isNumber(token)) {
+        return 'ERROR';
+    }
+    else {
+        return '';
+    }
+}
+
+function args() {
+    var t;
+    if (token === 'start') {
+        getNextToken();
+        var t = expr();
+        
+        if (token !== 'end') {
+            error(errors.EndExpected);
+            return 'ERROR';
+        }
+        
+        WS.log(t);
+        if (tokenPtr < tokens.length) {
+            var a = args();
+            if (a === 'ERROR') {
+                return 'ERROR';
+            }
+            else {
+                t += ', ' + a;
+            }
+        }
+        else {
+            return t;
+        }
+        
+        if (t === 'ERROR') {
+            return 'ERROR';
+        }
+        else {
+            return t + ', ' + a;
+        }
+    }
+    else if (token === 'string') {
+        getNextToken();
+        
+        var t = '';
+        
+        while (token !== 'end') {
+            if (tokenPtr > tokens.length) {
+                error(errors.EndExpected);
+                return 'ERROR';
+            }
+            t += token + ' ';
+            getNextToken();
+        }
+        
+        return '"' + t + '"';
+    }
+    else if (isId(token) || isNumber(token)) {
+        t = token;
+        getNextToken();
+        
+        while (tokenPtr <= tokens.length && token !== 'end') {
+            var a = args();
+            if (a === 'ERROR') {
+                return 'ERROR';
+            }
+            else {
+                t += ', ' + a;
+            }
+        }
+        
+        if (t === 'ERROR') {
+            return 'ERROR';
+        }
+        else {
+            return t;
+        }
+    }
+    else if (t = expr()) {
+        var a = args();
+        return t + ', ' + a;
+    }
+    else {
+        return '';
+    }
+}
+
+function boolExpr() {
+    if (token === 'true' || token === 'false') {
+        var t = token;
+        getNextToken();
+        return t;
+    }
+    else if (token === 'not') {
+        getNextToken();
+        var b = boolExpr();
+        return '!(' + b + ')';
+    }
+    else if (token === 'and' || token === 'or') {
+        getNextToken();
+        var x = boolExpr();
+        getNextToken();
+        var y = boolExpr();
+        return x + ' && ' + y;
+    }
+    else if (isId(token)) {
+        return functionCall();
+    }
+}
+
+function isKeyWord(word) {
+    switch (word) {
+        case 'variable':
+        case 'arguments':
+        case 'if':
+        case 'then':
+        case 'while':
+        case 'do':
+        case 'define':
+        case 'body':
+        case 'start':
+        case 'end':
+        case 'next':
+        case 'return':
+        case 'set':
+        case 'true':
+        case 'false':
+        case 'string':
+            return true;
+        default:
+            return false;
+    }
+} 
+
+function isId(id) {
+    if (id.length === 0)
+        return false;
+        
+    for (var i = 0; i < id.length; i++) {
+        if (!isLetter(id.charAt(i)))
+            return false;
+    }
+    return true;
+}
+
+function isLetter(str) {
+    return str.length === 1 && str.match(/[a-z]/i);
+}
+
+function isNumber(num) {
+    if (num.length === 0) {
+        return false;
+    }
+    
+    for (var i = 0; i < num.length; i++) {
+        if (!isNum(num.charAt(i))) {
+            return false;
+        }
+    }
+    return true;
+}
+
+function isNum(num) {
+    switch (num) {
+        case '0':
+        case '1':
+        case '2':
+        case '3':
+        case '4':
+        case '5':
+        case '6':
+        case '7':
+        case '8':
+        case '9':
+            return true;
+        
+        default:
+            return false;
+    }
+}
+
+function emitVar(id, value) {
+    return 'var ' + id + ' = ' + value + ';';
+}
+
+function emitWhile(cond, body) {
+    return 'while (' + cond + ') ' + body;
+}
+
+function emitIf(cond, expr) {
+    return 'if (' + cond + ') ' + expr;
+}
+
+function emitDefine(id, args, body) {
+    return 'var ' + id + ' = function(' + args + ') ' + body;
+}
+
+function emitFunctionCall(id, args) {
+    return id + '(' + args + ');';
+}
+
+function emitStart() {
+    return '{';
+}
+
+function emitEnd() {
+    return '}';
+}
+
+function emitReturn(body) {
+    return 'return ' + body + ';';
+}
+
+function emitSet(id, value) {
+    return id + ' = ' + value + ';';
+}
+
+function add(x, y) {
+    return x + y;
+}
+
+function subtract(x, y) {
+    return x - y;
+}
+
+function multiply(x, y) {
+    return x * y;
+}
+
+function divide(x, y) {
+    return x / y;
+}
+
+function not(bExp) {
+    return !bExp;
+}
+
+function and(x, y) {
+    return x && y;
+}
+
+function or(x, y) {
+    return x || y;
+}
+
+function say(string) {
+    return WS.say(string);
+}
+
+function log(string) {
+    return WS.log(string);
+}
+
+// Returns a negative number when x < y
+// Returns zero when x = y
+// Returns a positive number when x > y
+function compare(x, y) {
+    return x - y;
+}
+
+function less(x, y) {
+    return x < y;
+}
+
+function greater(x, y) {
+    return x > y;
+}
+
+function runProgram(progNum) {
+    WS.log(progNum + ' ' + programStrings[progNum].length);
+    WS.log('runProgram ' + programStrings[progNum]);
+    WS.log(eval(programStrings[progNum]));
+}
+
+function addLine(data, num, lineNum){
+    WS.log('add line ' + num + ' ' + data);
+    var output = runParser(data);
+    // WS.log(output);
+    if(output === 'ERROR') {
+        WS.say(output);
+    } else {
+        // WS.log(output);
+        programs[num].add(output, 'tap to eval', function () {
+            eval(output);
+        });
+        if(!programStrings[num]){
+            programStrings[num] = "";
+        }
+        WS.log(output);
+        programStrings[num] += output;
+        WS.log(programStrings[num]);
+        updateTree();
+    }
+}
+
+function createProgram(name, progNum) {
+    programs[progNum] = new WS.Cards();
+    programs[progNum].add(name, 'tap for options', 
+        'Edit Program', function () {
+            WS.speechRecognize('Say Something', function speech(data) {
+                var lineNum = 0;
+                WS.log(data);
+                addLine(data, progNum, lineNum);
+                lineNum++;
+            });
+        }, 
+        'Run Program', function () {
+            runProgram(progNum);
+        });
+    programTree.add(name, 'Tap to edit', programs[progNum]);
+    updateTree();
+}
+
+function updateTree() {
+    WS.cardTree(tree);
+    WS.displayCardTree();
+}
+
+function server() {
+    //WS.say('Welcome to speakscript');
+    
+    // Examples tests
+    WS.log(runParser('variable x 42'));
+    WS.log(runParser('while true do return x'));
+    WS.log(runParser('while true do start return x end'));
+    WS.log(runParser('while true do start variable x 42 next return x end'));
+    WS.log(runParser('while true do start variable x 42 next set x 7 next return x end'));
+    WS.log(runParser('if false then start variable k 0 next set k 4 next return k end'));
+    WS.log(runParser('define foo arguments x y body return x'));
+    WS.log(runParser('define foo arguments x y body start return x end'));
+    WS.log(runParser('foo arguments x y'));
+    WS.log(runParser('foo arguments x start add arguments 2 3 end'));  // This is an interesting case that needs to be thought out.
+    WS.log(runParser('say arguments string hello world end'));
+
+    tree = new WS.Cards();
+    tree.add('Speak Script',
+        'Tap to create', function () {/*WS.say('selected')*/},function () {/*WS.say('tapped')*/},
+        'Create Program', function () {
+            WS.speechRecognize('Say Something', function speech(data) {
+                createProgram(data, progNum);
+                progNum++;
+                WS.log(data);
+            });
+        });
+    tree.add('programs', 'tap to view', (programTree));
+   
+    updateTree();
+}
+function main() {
+    if (WS.scriptVersion(1)) return;
+    ctx = document.getElementById('canvas').getContext("2d");
+    WS.serverConnect('{{WSUrl}}', server);
+}
+window.onload = main;
+</script>
+</body>
+</html>
