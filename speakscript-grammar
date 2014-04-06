@@ -22,7 +22,7 @@
 
 <bool-expr> := true
 	| false
-	| not <bool-expr> <bool-expr>
+	| not <bool-expr>
 	| and <bool-expr> <bool-expr>
 	| or <bool-expr> <bool-expr>
 	| <id> arguments <args>
